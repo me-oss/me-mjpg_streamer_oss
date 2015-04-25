@@ -71,7 +71,7 @@ int (*CheckIPisLocalorRemoteorServer)(struct sockaddr_in, struct sockaddr_in,
 int (*TimerCheck)();
 void (*ClearRemoteIP)();
 void (*SetRemoteIP)(char* ip);
-
+char* (*RetrieveSessionKey)();
 
 /**
  *  PostOffice function pointers
@@ -1362,9 +1362,10 @@ void command(int id, int fd, char *parameter, struct sockaddr_in client_address)
 	int i = 0, res = -1, ivalue = 0, len = 0, iret;
 	char strGet[4096];
 	//add by mlsdev008 11/11/2011
+	char command_key[10];
 	struct sockaddr_in server_address = client_address;
 //  printf("parameter is: %s\n", parameter);
-
+	memset(command_key,10,0);
 	/* sanity check of parameter-string */
 	if (parameter == NULL
 			|| /* strlen(parameter) >= 100 ||*/strlen(parameter) == 0) {
@@ -1372,6 +1373,23 @@ void command(int id, int fd, char *parameter, struct sockaddr_in client_address)
 		send_error(fd, 400, "Parameter-string of command does not look valid.");
 		return;
 	}
+
+
+       if ((strValue = strstr(parameter, "sesskey=")) != NULL) {
+               printf("%s\n",strValue);
+               //commandtmp = strndup(command,strlen(command)-strlen(value));
+               strValue += strlen("sesskey=");
+//      len = strlen(strValue);
+               len = strspn(strValue,
+                       "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ1234567890");
+//  printf("command after %s\n",command);
+               if (len == 8)
+               {
+                   memcpy(command_key,strValue,8);
+                   command_key[8]=0;
+               }
+               printf("Sesskey='%s\n", command_key);
+       }
 
 	/* search for required variable "command" */
 	if ((command = strstr(parameter, "command=")) == NULL) {
@@ -1480,18 +1498,22 @@ void command(int id, int fd, char *parameter, struct sockaddr_in client_address)
 			// THESE COMMANDS BELOW ONLY ACCEPTED FROM CENTRAL SERVER
 			
 			if (
-					(
-							(in_cmd_mapping[i].cmd == IN_CMD_SERVER_IS_CAM_READY) ||
-							(in_cmd_mapping[i].cmd == IN_CMD_SERVER_SET_RANDOM_NUMBER)
-					)
-					&&
-					(CheckIPisLocalorRemoteorServer(client_address,pglobal->CurrentIP,pglobal->NetworkmaskIP) != 2)// Server IP
+					(CheckIPisLocalorRemoteorServer(client_address,pglobal->CurrentIP,pglobal->NetworkmaskIP) ==1)// Server IP
 			)
 			{
+
+			    char* tmp = RetrieveSessionKey()+56;
+			    printf("Compare ('%s' vs '%s')\n",tmp,command_key);
+			    //force all command must pass this one
+			    if (strcmp(command_key,RetrieveSessionKey()+56) != 0)
+			    {
 				send_error(fd, HTTP_AUTHEN_ERROR_IP_BLOCK, "This IP is blocked\n");
 				if (command != NULL) free(command);
 				if (setup != NULL) free (setup);
 				return;
+			    }
+
+
 			}
 #endif
 //      printf("httpd cmd\n");
@@ -2156,12 +2178,8 @@ void *client_thread(void *arg) {
 	switch (req.type) {
 	case A_LOG: {
 		char filename[32];
-		
-		// check user_password
-		if (req.credentials == NULL
-				|| strcmp("blink1.0:blink101013", req.credentials) != 0) {
-			printf("access denied\n");
-			printf("**** Correct is '%s', u give '%s'\n","blink1.0:blink101013",req.credentials); 
+		{
+		    printf("access denied\n");
 			send_error(lcfd.fd, 401,
 					"username and password do not match to configuration");
 			close(lcfd.fd);
@@ -2176,14 +2194,6 @@ void *client_thread(void *arg) {
 		}
 		
 		
-		printf("Request for LOG\n");
-		system("rm -rf /var/log/message.dump");
-		system("/mlsrb/process_dump.sh");
-		sleep(1);
-		system("tar czf /mlsrb/mlswwwn/log.tar.gz /var/log/message*");
-		sprintf(filename, "log.tar.gz");
-		send_log(lcfd.pc->id, lcfd.fd, filename);
-		unlink("/mlsrb/mlswwwn/log.tar.gz");
 	}
 		break;
 
@@ -2315,7 +2325,7 @@ void *server_thread(void *arg) {
 	TimerCheck = mlsAuthen_TimerCheck;
 	ClearRemoteIP = mlsAuthen_ClearRemoteIP;
 	SetRemoteIP = mlsAuthen_SetRemoteIP;
-	
+	RetrieveSessionKey = mlsAuthen_RetrieveSessionKey;
     //! Assign Postoffice action
     PostOffice_ReceiveMail_fp= PostOffice_ReceiveMail;
     PostOffice_MarkMailRead_fp= PostOffice_MarkMailRead;

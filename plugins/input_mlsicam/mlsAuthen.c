@@ -245,7 +245,7 @@ int mlsAuthen_CheckIPisLocalorRemoteorServer(struct sockaddr_in CheckIP, struct 
 	    memset(&hints, 0 , sizeof (struct addrinfo));
 
 	    ini_gets("General","MainAppServerName",CENTRAL_SERVER_ADDRESS,server_name,128,"/mlsrb/serverconfig.ini");
-
+	    sprintf(servername,"vpc-nat.monitoreverywhere.com");
 	    hints.ai_flags = AI_PASSIVE;
 	    hints.ai_family = AF_INET;
 	    hints.ai_socktype = SOCK_STREAM;
